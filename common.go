@@ -22,6 +22,11 @@ func Parse(s string, rt reflect.Type) (reflect.Value, error) {
 	return defaultDecoder.Parse(s, rt)
 }
 
+// Converts the value to the given type.
+func Convert(v any, rt reflect.Type) (any, error) {
+	return defaultDecoder.Convert(v, rt)
+}
+
 // Returns the reference to the default decoder to control the global decoding logic.
 func GetDefaultDecoder() *Decoder {
 	return &defaultDecoder
@@ -35,6 +40,27 @@ func Ptr[V any](value V) *V {
 // Returns the reflect.Type based on the type parameter.
 func TypeOf[V any]() reflect.Type {
 	return reflect.TypeOf((*V)(nil)).Elem()
+}
+
+// Returns whether the given value is nil
+func IsNil(v any) bool {
+	rv := Reflect(v)
+	for {
+		switch rv.Kind() {
+		case reflect.Map, reflect.Pointer, reflect.Slice, reflect.Chan, reflect.Func, reflect.Interface:
+			if rv.IsNil() {
+				return true
+			}
+		default:
+			return false
+		}
+		if IsPointing(rv) {
+			rv = rv.Elem()
+		} else {
+			return false
+		}
+	}
+	return false
 }
 
 // Returns whether the two values string representations are equal.
@@ -57,19 +83,16 @@ func Reflect(v any) reflect.Value {
 
 // Returns the concrete (non-pointer, non-interface) value of the given value.
 func Concrete(v any) reflect.Value {
-	return concrete(Reflect(v))
+	rv := Reflect(v)
+	for IsPointing(rv) {
+		rv = rv.Elem()
+	}
+	return rv
 }
 
 // Returns true if the value is a pointer or interface.
 func IsPointing(rv reflect.Value) bool {
 	return rv.Kind() == reflect.Interface || rv.Kind() == reflect.Pointer
-}
-
-func concrete(rv reflect.Value) reflect.Value {
-	for IsPointing(rv) {
-		rv = rv.Elem()
-	}
-	return rv
 }
 
 // Converts the type to the non-pointer type.
@@ -116,6 +139,7 @@ func InitValue(rv reflect.Value, rt reflect.Type) bool {
 			return false
 		}
 	}
+
 	switch rt.Kind() {
 	case reflect.Slice:
 		rv.Set(reflect.MakeSlice(rt, 0, 0))
@@ -129,12 +153,12 @@ func InitValue(rv reflect.Value, rt reflect.Type) bool {
 			return false
 		}
 		rv.Set(ptr)
-	default:
-		if !rv.CanSet() {
-			return false
-		}
-		ptr := reflect.New(rt)
-		rv.Set(ptr.Elem())
+		// default:
+		// 	if !rv.CanSet() {
+		// 		return false
+		// 	}
+		// 	ptr := reflect.New(rt)
+		// 	rv.Set(ptr.Elem())
 	}
 
 	return true
@@ -156,4 +180,35 @@ func Init(value any) reflect.Value {
 		return reflect.Value{}
 	}
 	return rv
+}
+
+// Determines whether the given type is a method or function which takes no arguments and returns a single value.
+func IsGetter(rt reflect.Type, forType reflect.Type) bool {
+	if rt.Kind() != reflect.Func {
+		return false
+	}
+	if forType == nil && rt.NumIn() != 0 {
+		return false
+	}
+	if forType != nil && (rt.NumIn() != 1 || rt.In(0) != forType) {
+		return false
+	}
+	return rt.NumOut() == 1
+}
+
+// Determines whether the given type is a method or function which takes one argument and returns no value or an error.
+func IsSetter(rt reflect.Type, forType reflect.Type) bool {
+	if rt.Kind() != reflect.Func {
+		return false
+	}
+	if rt.NumOut() > 1 || (rt.NumOut() == 1 && !TypeOf[error]().AssignableTo(rt.Out(0))) {
+		return false
+	}
+	if forType == nil && rt.NumIn() != 1 {
+		return false
+	}
+	if forType != nil && (rt.NumIn() != 2 || rt.In(0) != forType) {
+		return false
+	}
+	return true
 }

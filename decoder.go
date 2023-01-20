@@ -279,3 +279,8 @@ func (d Decoder) DecodeType(t reflect.Type, s string) (any, error) {
 	}
 	return v.Elem().Interface(), nil
 }
+
+// Converts a value to a target type by converting it to a string and converting it to the desired type.
+func (d Decoder) Convert(val any, target reflect.Type) (any, error) {
+	return d.DecodeType(target, ToString(val))
+}
